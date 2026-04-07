@@ -1,148 +1,26 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AAPL TD3 Prediction Dashboard</title>
-    <link rel="stylesheet" href="styles.css" />
-    <!-- Chart.js CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- TODO: Set the document title to the name of your application -->
+    <title>Lovable App</title>
+    <meta name="description" content="Final year Project" />
+    <meta name="author" content="Tejas" />
+
+    <!-- TODO: Update og:title to match your application name -->
+    <meta property="og:title" content="TD3 PredictAI" />
+    <meta property="og:description" content="Final year Project" />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="" />
+
+    <meta name="" content="summary_large_image" />
+    <meta name="" content="" />
+    <meta name="" content="" />
   </head>
+
   <body>
-    <div class="app-container">
-      <header class="app-header">
-        <div>
-          <h1>AAPL TD3 Prediction Dashboard</h1>
-          <p class="subtitle">
-            Visualize closing prices and TD3 action signals served from your
-            backend API.
-          </p>
-        </div>
-      </header>
-
-      <main class="content">
-        <section class="controls-card">
-          <div class="controls-row">
-            <div class="control">
-              <label for="dateRange">Date range</label>
-              <select id="dateRange">
-                <option value="all">All data</option>
-                <option value="90">Last 90 days</option>
-                <option value="180">Last 180 days</option>
-                <option value="365">Last 365 days</option>
-              </select>
-            </div>
-            <div class="control">
-              <label for="smoothing">Action smoothing (window)</label>
-              <select id="smoothing">
-                <option value="1">None</option>
-                <option value="3">3-point</option>
-                <option value="5" selected>5-point</option>
-                <option value="9">9-point</option>
-              </select>
-            </div>
-            <div class="control">
-              <label for="actionScale">Action scale</label>
-              <select id="actionScale">
-                <option value="1">1x</option>
-                <option value="2">2x</option>
-                <option value="5" selected>5x</option>
-                <option value="10">10x</option>
-              </select>
-            </div>
-          </div>
-          <div class="legend-row">
-            <span class="chip chip-price">Close price</span>
-            <span class="chip chip-action">TD3 action</span>
-          </div>
-        </section>
-
-        <section class="chart-card">
-          <canvas id="aaplChart"></canvas>
-        </section>
-
-        <section class="stats-card">
-          <div class="stats-grid">
-            <div class="stat">
-              <div class="stat-label">Data points</div>
-              <div class="stat-value" id="statCount">-</div>
-            </div>
-            <div class="stat">
-              <div class="stat-label">Close range</div>
-              <div class="stat-value" id="statCloseRange">-</div>
-            </div>
-            <div class="stat">
-              <div class="stat-label">Mean action</div>
-              <div class="stat-value" id="statMeanAction">-</div>
-            </div>
-            <div class="stat">
-              <div class="stat-label">Action range</div>
-              <div class="stat-value" id="statActionRange">-</div>
-            </div>
-          </div>
-        </section>
-
-        <section class="metrics-card">
-          <div class="metrics-grid">
-            <div class="stat">
-              <div class="stat-label">Sharpe (buy &amp; hold)</div>
-              <div class="stat-value" id="statSharpeBuyHold">-</div>
-            </div>
-            <div class="stat">
-              <div class="stat-label">Sharpe (TD3 policy)</div>
-              <div class="stat-value" id="statSharpePolicy">-</div>
-            </div>
-            <div class="stat">
-              <div class="stat-label">Avg daily return</div>
-              <div class="stat-value" id="statAvgReturn">-</div>
-            </div>
-            <div class="stat">
-              <div class="stat-label">Volatility (daily)</div>
-              <div class="stat-value" id="statVolatility">-</div>
-            </div>
-            <div class="stat">
-              <div class="stat-label">Hit rate (sign match)</div>
-              <div class="stat-value" id="statHitRate">-</div>
-            </div>
-            <div class="stat">
-              <div class="stat-label">Corr(action, next return)</div>
-              <div class="stat-value" id="statCorr">-</div>
-            </div>
-          </div>
-          <p class="metrics-note">
-            Sharpe is computed from daily returns in the selected window
-            (buy &amp; hold vs. using your TD3 action as the position). Hit
-            rate tells you how often the sign of the action agrees with the
-            sign of the next-day return.
-          </p>
-        </section>
-
-        <section class="table-card">
-          <div class="table-header">
-            <h2>Sample rows</h2>
-            <span class="table-note">Showing the latest 20 entries</span>
-          </div>
-          <div class="table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Close</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody id="sampleTableBody"></tbody>
-            </table>
-          </div>
-        </section>
-      </main>
-
-      <footer class="app-footer">
-        <span>Powered by your TD3 model outputs.</span>
-      </footer>
-    </div>
-
-    <script src="script.js"></script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
-  </html>
-
+</html>

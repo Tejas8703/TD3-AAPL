@@ -24,11 +24,11 @@ class Actor(nn.Module):
         super(Actor, self).__init__()
         self.net = nn.Sequential(
             nn.Linear(state_dim, 400),
+            nn.LayerNorm(400),
             nn.ReLU(),
-            nn.Dropout(0.2),
             nn.Linear(400, 300),
+            nn.LayerNorm(300),
             nn.ReLU(),
-            nn.Dropout(0.2),
             nn.Linear(300, action_dim),
             nn.Tanh()
         )
@@ -202,7 +202,8 @@ def plot_training_metrics(rewards, sharpe_ratios, training_times):
     plt.ylabel("Time (seconds)")
 
     plt.tight_layout()
-    plt.show()
+    plt.savefig("training_metrics.png") # Changed from plt.show() to avoid blocked execution
+    # plt.show()
 
 def train_td3_stock_prediction(stock_data, epochs=100, batch_size=256):
     scaler = StandardScaler()
@@ -273,40 +274,90 @@ def load_stock_data(ticker, start_date, end_date):
     df = add_technical_indicators(df)
     return df
 
-def evaluate_model_on_test_data(model, test_data):
+def evaluate_model_on_test_data(model, scaled_test_data, raw_test_data):
     test_rewards = []
-    state = test_data[0]
+    correct_directions = 0
+    total_steps = len(scaled_test_data) - 1
+    
+    actions_history = []
+    prices_history = []
 
-    for t in range(1, len(test_data)):
+    for t in range(1, len(scaled_test_data)):
+        state = scaled_test_data[t-1]
         action = model.select_action(state)
-        next_state = test_data[t]
-        reward = calculate_reward(action, next_state[3], state[3])
+        
+        current_price = raw_test_data[t-1][3]
+        next_price = raw_test_data[t][3]
+        price_change = next_price - current_price
+        
+        # Action stringency check
+        action_val = action[0] if isinstance(action, (list, np.ndarray)) else action
+        
+        actions_history.append(action_val)
+        prices_history.append(current_price)
+        if (action_val > 0 and price_change > 0) or (action_val < 0 and price_change < 0):
+            correct_directions += 1
+            
+        reward = calculate_reward(action, next_price, current_price)
         test_rewards.append(reward)
-        state = next_state
 
+    accuracy = correct_directions / total_steps * 100 if total_steps > 0 else 0
     sharpe_ratio = calculate_sharpe_ratio(np.array(test_rewards))
     logging.info(f"Test Sharpe Ratio: {sharpe_ratio:.4f}")
-    return test_rewards, sharpe_ratio
+    logging.info(f"Test Directional Accuracy: {accuracy:.2f}% ({correct_directions}/{total_steps})")
+    
+    # Generate Dual-Axis Plot
+    fig, ax1 = plt.subplots(figsize=(10, 5))
+    color = 'tab:blue'
+    ax1.set_xlabel('Days')
+    ax1.set_ylabel('Actual Price ($)', color=color)
+    ax1.plot(prices_history, color=color)
+    ax1.tick_params(axis='y', labelcolor=color)
+    
+    ax2 = ax1.twinx()
+    color = 'tab:red'
+    ax2.set_ylabel('Model Action Outputs (-1 to 1)', color=color)
+    ax2.plot(actions_history, color=color, alpha=0.5)
+    ax2.axhline(y=0, color='black', linestyle='--')
+    ax2.tick_params(axis='y', labelcolor=color)
+    
+    fig.tight_layout()
+    plt.title("TD3 Actions vs AAPL Close Price (Test Data Data)")
+    plt.savefig("test_output_vs_input.png")
+    plt.close()
+
+    return test_rewards, sharpe_ratio, accuracy
 
 if __name__ == "__main__":
     ticker = "AAPL"
-    start_date = "2018-01-01"
-    end_date = "2023-12-31"
+    model_path = "td3_stock_prediction_model_AAPL_full.pth"
 
-    stock_data = load_stock_data(ticker, start_date, end_date)
-    trained_model, rewards, sharpe_ratios, training_times, all_actions = train_td3_stock_prediction(stock_data.values)
-
-    torch.save(trained_model.actor.state_dict(), f'td3_stock_prediction_model_{ticker}.pth')
-    logging.info(f"Model training completed and saved for {ticker}.")
-
-    plot_training_metrics(rewards, sharpe_ratios, training_times)
-
+    # Create model
+    trained_model = TD3(12, 1, 1) # state_dim=12 from previous log
+    checkpoint = torch.load(model_path, map_location=device)
+    if "model_state_dict" in checkpoint:
+        trained_model.actor.load_state_dict(checkpoint["model_state_dict"])
+    elif "actor" in checkpoint:
+        trained_model.actor.load_state_dict(checkpoint["actor"])
+    else:
+        trained_model.actor.load_state_dict(checkpoint)
+    logging.info(f"Loaded existing model from {model_path}.")
 
     test_start_date = "2024-01-01"
     test_end_date = "2024-04-01"
     test_data = load_stock_data(ticker, test_start_date, test_end_date)
+    
+    # We must fit the scaler on the original training data to match what the model saw
+    train_start_date = "2018-01-01"
+    train_end_date = "2023-12-31"
+    train_data = load_stock_data(ticker, train_start_date, train_end_date)
+    
+    from sklearn.preprocessing import StandardScaler
+    scaler = StandardScaler()
+    scaler.fit(train_data.values)
+    
+    scaled_test_data = scaler.transform(test_data.values)
 
+    test_rewards, test_sharpe_ratio, test_acc = evaluate_model_on_test_data(trained_model, scaled_test_data, test_data.values)
 
-    test_rewards, test_sharpe_ratio = evaluate_model_on_test_data(trained_model, test_data.values)
-
-    logging.info(f"Test Evaluation Completed: Sharpe Ratio {test_sharpe_ratio}")
+    logging.info(f"Test Evaluation Completed: Sharpe Ratio {test_sharpe_ratio:.4f}, Accuracy {test_acc:.2f}%")
