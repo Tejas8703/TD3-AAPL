@@ -1,46 +1,82 @@
-# AAPL TD3 Prediction Dashboard
+# TD3 Stock Dashboard (AAPL + TCS)
 
-Frontend + backend split for visualizing your TD3 model outputs stored in `AAPL_actions_smooth_56_accuracy.csv`.
+This project has:
+- a `FastAPI` backend (`backend/`)
+- a `React + Vite` frontend (`frontend/`)
 
-The app shows:
+Use both servers in development:
+- Backend: `http://127.0.0.1:8001`
+- Frontend: `http://127.0.0.1:8080`
 
-- **Close price line** on the primary Y-axis
-- **TD3 action signal line** on the secondary Y-axis
-- **Controls** for date range, smoothing window, and action scaling
-- **Performance metrics**: Sharpe ratios, hit rate, correlation, etc.
-- **Summary stats** and a **sample table** of the most recent rows
+## 1) Backend setup and run
 
-## Project structure
+From project root:
 
-- `frontend/`
-  - `index.html` – main dashboard UI
-  - `styles.css` – styling
-  - `script.js` – chart + analytics logic (talks to the backend)
-- `backend/`
-  - `app.py` – FastAPI app that serves the CSV as JSON and hosts the frontend
-  - `requirements.txt` – Python dependencies
-- `AAPL_actions_smooth_56_accuracy.csv` – your existing CSV with `Date,Close,action`
+```bash
+cd backend
+python3 -m pip install -r requirements.txt
+python3 -m pip install yfinance ta python-multipart torch
+python3 -m uvicorn app:app --port 8001
+```
 
-## How to run (backend + frontend together)
+Backend endpoints:
+- `http://127.0.0.1:8001/api/data?ticker=AAPL`
+- `http://127.0.0.1:8001/api/td3-results?ticker=TCS`
 
-1. Create and activate a Python environment (optional but recommended), then install backend deps:
+## 2) Frontend setup and run
 
-   ```bash
-   cd "d:\Final Try\backend"
-   pip install -r requirements.txt
-   ```
+Open a second terminal, from project root:
 
-2. Start the FastAPI server with Uvicorn:
+```bash
+cd frontend
+npm install
+npm run dev -- --host 127.0.0.1 --port 8080
+```
 
-   ```bash
-   uvicorn app:app --reload --port 8000
-   ```
+Open:
 
-3. Open the dashboard in your browser:
+```text
+http://127.0.0.1:8080/
+```
 
-   ```text
-   http://localhost:8000/
-   ```
+## 2.1) Demo auth pages
 
-The backend reads `AAPL_actions_smooth_56_accuracy.csv` from the project root and exposes it at `/api/data`, and also serves the static files from the `frontend` folder.
+From the navbar:
+- `Login` opens `/login`
+- `Sign Up` opens `/signup`
+- After login, click your name for `/profile`
+
+Demo login credentials:
+
+```text
+Email: demo@td3.ai
+Password: Demo@123
+```
+
+## 3) Daily quick run
+
+After initial setup, just run:
+
+Terminal 1:
+
+```bash
+cd backend
+python3 -m uvicorn app:app --port 8001
+```
+
+Terminal 2:
+
+```bash
+cd frontend
+npm run dev -- --host 127.0.0.1 --port 8080
+```
+
+## Troubleshooting
+
+- `Address already in use`:
+  - change port (for example `--port 8002`) or stop the old process.
+- Frontend loads but API fails:
+  - ensure backend is running on `8001`.
+- Missing Python packages:
+  - run the backend install commands again.
 

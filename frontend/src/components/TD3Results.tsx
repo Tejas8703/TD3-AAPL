@@ -25,10 +25,11 @@ import {
   RefreshCw,
   Terminal,
   Gauge,
+  Upload,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { fetchTD3Results, runTD3Model, type TD3Results } from "@/data/td3Results";
+import { fetchTD3Results, runTD3Model, uploadCSVData, type TD3Results } from "@/data/td3Results";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -61,10 +62,14 @@ function TD3Charts({
   data,
   onRunAgain,
   isRunning,
+  ticker,
+  setTicker,
 }: {
   data: TD3Results;
   onRunAgain?: () => void;
   isRunning?: boolean;
+  ticker?: string;
+  setTicker?: (t: string) => void;
 }) {
   const { metrics, ohlc, portfolioHistory, actions, positions } = data;
 
@@ -108,11 +113,11 @@ function TD3Charts({
     },
     ...(metrics.directionAccuracyPct != null
       ? [{
-          label: "Direction Accuracy",
-          value: `${metrics.directionAccuracyPct.toFixed(1)}%`,
-          icon: Gauge,
-          color: metrics.directionAccuracyPct >= 50 ? "text-gain" : "text-loss",
-        }]
+        label: "Direction Accuracy",
+        value: `${metrics.directionAccuracyPct.toFixed(1)}%`,
+        icon: Gauge,
+        color: metrics.directionAccuracyPct >= 50 ? "text-gain" : "text-loss",
+      }]
       : []),
   ];
 
@@ -137,17 +142,31 @@ function TD3Charts({
         <div className="flex items-center gap-3">
           <Brain className="h-8 w-8 text-[#238636]" />
           <div>
-            <h2 className="text-2xl font-bold text-white">TD3 Model Output</h2>
-            <p className="text-sm text-[#8b949e]">
-              AAPL · TD3 trading agent results
-            </p>
+            <h2 className="text-2xl font-bold text-white">TD3 prediction Model Output</h2>
+            <div className="flex items-center gap-2 mt-1">
+              <p className="text-sm text-[#8b949e]">
+                {ticker || "AAPL"} · TD3 trading agent results
+              </p>
+              {setTicker && (
+                <div className="flex gap-1 ml-2">
+                  <Button size="sm" variant={ticker === "AAPL" ? "default" : "outline"} onClick={() => setTicker("AAPL")} className="h-6 text-xs px-2">AAPL</Button>
+                  <Button size="sm" variant={ticker === "TCS" ? "default" : "outline"} onClick={() => setTicker("TCS")} className="h-6 text-xs px-2">TCS</Button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
         {onRunAgain && (
-          <Button onClick={onRunAgain} disabled={isRunning} variant="outline" className="gap-2 border-[#30363d] bg-[#161b22] text-[#c9d1d9] hover:bg-[#21262d]">
-            {isRunning ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Terminal className="h-4 w-4" />}
-            {isRunning ? "Running… (1–3 min)" : "Run again"}
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={onRunAgain} disabled={isRunning} variant="outline" className="gap-2 border-[#30363d] bg-[#161b22] text-[#c9d1d9] hover:bg-[#21262d]">
+              {isRunning ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Terminal className="h-4 w-4" />}
+              {isRunning ? "Running… (1–3 min)" : "Run again"}
+            </Button>
+            <Button onClick={() => document.getElementById("csv-upload")?.click()} disabled={isRunning} variant="outline" className="gap-2 border-[#30363d] bg-[#161b22] text-[#c9d1d9] hover:bg-[#21262d]">
+              <Upload className="h-4 w-4" />
+              Upload CSV
+            </Button>
+          </div>
         )}
       </motion.div>
 
@@ -164,9 +183,8 @@ function TD3Charts({
               <Icon className={`h-4 w-4 ${color === "text-gain" ? "text-[#3fb950]" : color === "text-loss" ? "text-[#f85149]" : color === "text-warn" ? "text-[#d29922]" : "text-[#58a6ff]"}`} />
               <span className={chartLabelClass}>{label}</span>
             </div>
-            <span className={`font-mono text-lg font-semibold tabular-nums ${
-              color === "text-gain" ? "text-[#3fb950]" : color === "text-loss" ? "text-[#f85149]" : color === "text-warn" ? "text-[#d29922]" : "text-[#58a6ff]"
-            }`}>
+            <span className={`font-mono text-lg font-semibold tabular-nums ${color === "text-gain" ? "text-[#3fb950]" : color === "text-loss" ? "text-[#f85149]" : color === "text-warn" ? "text-[#d29922]" : "text-[#58a6ff]"
+              }`}>
               {value}
             </span>
           </div>
@@ -183,7 +201,7 @@ function TD3Charts({
         <div className="flex items-center justify-between border-b border-[#30363d] px-4 py-3">
           <div className="flex items-center gap-2">
             <BarChart3 className="h-4 w-4 text-[#8b949e]" />
-            <span className="font-mono text-sm font-semibold text-[#c9d1d9]">AAPL · Candlestick</span>
+            <span className="font-mono text-sm font-semibold text-[#c9d1d9]">{ticker || "AAPL"} · Candlestick</span>
           </div>
           <div className="flex gap-4 font-mono text-xs text-[#8b949e]">
             <span><span className="text-[#3fb950]">O</span> Open</span>
@@ -259,6 +277,7 @@ function TD3Charts({
           </ResponsiveContainer>
         </div>
       </motion.div>
+
     </section>
   );
 }
@@ -328,13 +347,14 @@ function TD3Empty({
 
 export default function TD3Results() {
   const queryClient = useQueryClient();
+  const [ticker, setTicker] = useState("AAPL");
   const [runLog, setRunLog] = useState<string[]>([]);
   const [runError, setRunError] = useState<string | undefined>();
   const [isRunning, setIsRunning] = useState(false);
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ["td3-results"],
-    queryFn: fetchTD3Results,
+    queryKey: ["td3-results", ticker],
+    queryFn: () => fetchTD3Results(ticker),
     refetchOnWindowFocus: false,
     retry: false,
   });
@@ -349,7 +369,7 @@ export default function TD3Results() {
       if (!out.success) {
         setRunError(out.error || "Run failed");
       } else if (out.results) {
-        queryClient.setQueryData(["td3-results"], out.results);
+        queryClient.setQueryData(["td3-results", ticker], out.results);
       } else {
         refetch();
       }
@@ -357,6 +377,29 @@ export default function TD3Results() {
       setRunError(e instanceof Error ? e.message : "Request failed");
     } finally {
       setIsRunning(false);
+    }
+  };
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsRunning(true);
+    setRunError(undefined);
+    setRunLog([`Uploading and evaluating ${file.name}...`]);
+    try {
+      const out = await uploadCSVData(file);
+      setRunLog((prev) => [...prev, ...(out.log || [])]);
+      if (!out.success) {
+        setRunError(out.error || "Upload analysis failed");
+      } else if (out.results) {
+        queryClient.setQueryData(["td3-results", ticker], out.results);
+      }
+    } catch (err: any) {
+      setRunError(err.message || "Upload request failed");
+    } finally {
+      setIsRunning(false);
+      // Reset the file input so the same file can be uploaded again if needed
+      e.target.value = "";
     }
   };
 
@@ -394,7 +437,14 @@ export default function TD3Results() {
           <RunOutput log={runLog} error={runError} />
         </section>
       ) : null}
-      <TD3Charts data={data} onRunAgain={handleRun} isRunning={isRunning} />
+      <TD3Charts data={data} onRunAgain={handleRun} isRunning={isRunning} ticker={ticker} setTicker={setTicker} />
+      <input
+        type="file"
+        id="csv-upload"
+        accept=".csv"
+        className="hidden"
+        onChange={handleUpload}
+      />
     </>
   );
 }

@@ -13,15 +13,23 @@ const AIPrediction = ({ stock }: AIPredictionProps) => {
   const currency = stock.exchange === "NASDAQ" ? "$" : "₹";
 
   const { data: td3 } = useQuery({
-    queryKey: ["td3-results"],
-    queryFn: fetchTD3Results,
+    queryKey: ["td3-results", stock.ticker],
+    queryFn: () => fetchTD3Results(stock.ticker),
     staleTime: 60_000,
     refetchOnWindowFocus: false,
     retry: false,
   });
 
-  const isAAPL = stock.ticker === "AAPL";
+  const supportsTD3Summary = stock.ticker === "AAPL" || stock.ticker === "TCS";
   const td3m = td3?.metrics;
+  const modelQuality =
+    td3m && td3m.directionAccuracyPct != null
+      ? td3m.directionAccuracyPct >= 55 && td3m.sharpeRatio >= 0
+        ? "Good"
+        : td3m.directionAccuracyPct >= 50
+          ? "Moderate"
+          : "Needs Improvement"
+      : null;
 
   const recIcon = p.recommendation === "Buy" ? ThumbsUp : p.recommendation === "Hold" ? Minus : ThumbsDown;
   const recColor = p.recommendation === "Buy" ? "text-gain bg-gain/10" : p.recommendation === "Hold" ? "text-warn bg-warn/10" : "text-loss bg-loss/10";
@@ -108,12 +116,25 @@ const AIPrediction = ({ stock }: AIPredictionProps) => {
         </div>
       </div>
 
-      {/* TD3 trading model summary for AAPL */}
-      {isAAPL && td3m && (
+      {/* TD3 trading model summary for AAPL/TCS */}
+      {supportsTD3Summary && td3m && (
         <div className="mt-6 rounded-lg bg-secondary/50 p-4">
           <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-muted-foreground">
             <Brain className="h-4 w-4 text-chart-accent" />
-            <span>TD3 Trading Model (test period)</span>
+            <span>{stock.ticker} · TD3 Trading Model (test period)</span>
+            {modelQuality ? (
+              <span
+                className={`ml-auto rounded px-2 py-0.5 text-[10px] ${
+                  modelQuality === "Good"
+                    ? "bg-gain/20 text-gain"
+                    : modelQuality === "Moderate"
+                      ? "bg-warn/20 text-warn"
+                      : "bg-loss/20 text-loss"
+                }`}
+              >
+                {modelQuality}
+              </span>
+            ) : null}
           </div>
           <div className="grid grid-cols-2 gap-3 text-xs sm:text-sm font-mono">
             <div>
@@ -140,7 +161,7 @@ const AIPrediction = ({ stock }: AIPredictionProps) => {
             )}
           </div>
           <p className="mt-3 text-[11px] text-muted-foreground">
-            Shows how the TD3 reinforcement learning trading agent performed on recent AAPL data.
+            Shows how the TD3 reinforcement learning trading agent performed on recent {stock.ticker} data.
           </p>
         </div>
       )}

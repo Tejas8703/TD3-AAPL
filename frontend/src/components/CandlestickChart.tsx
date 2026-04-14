@@ -77,6 +77,7 @@ export default function CandlestickChart({ data, height = 380, className = "" }:
       return { time: t, open: d.open, high: d.high, low: d.low, close: d.close };
     });
     candlestickSeries.setData(chartData);
+
     chart.timeScale().fitContent();
 
     chartRef.current = chart;

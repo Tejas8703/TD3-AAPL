@@ -1,23 +1,30 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Header from "@/components/Header";
 import HeroSection from "@/components/HeroSection";
 import TD3Results from "@/components/TD3Results";
 import StockOverview from "@/components/StockOverview";
-import AIPrediction from "@/components/AIPrediction";
 import StockChart from "@/components/StockChart";
-import AIInsights from "@/components/AIInsights";
 import RiskDisclaimer from "@/components/RiskDisclaimer";
 import Footer from "@/components/Footer";
 import { stocks } from "@/data/mockStocks";
 import type { Stock } from "@/data/mockStocks";
+import { getCurrentUser, initDemoAuth, logoutDemoUser, type DemoUser } from "@/lib/demoAuth";
 
 const Index = () => {
   const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
+  const [activeView, setActiveView] = useState<"home" | "td3">("home");
+  const [user, setUser] = useState<DemoUser | null>(null);
+
+  useEffect(() => {
+    initDemoAuth();
+    setUser(getCurrentUser());
+  }, []);
 
   const handleSearch = (ticker: string) => {
     const stock = stocks[ticker];
     if (stock) {
       setSelectedStock(stock);
+      setActiveView("home");
       // Scroll to results
       setTimeout(() => {
         document.getElementById("results")?.scrollIntoView({ behavior: "smooth" });
@@ -25,27 +32,31 @@ const Index = () => {
     }
   };
 
+  const handleLogout = () => {
+    logoutDemoUser();
+    setUser(null);
+  };
+
   return (
     <div className="min-h-screen bg-background">
-      <Header />
-      <HeroSection onSearch={handleSearch} />
+      <Header activeView={activeView} onNavigateView={setActiveView} user={user} onLogout={handleLogout} />
 
-      {/* TD3 model output: CSV data run through ML model — charts, open/close, metrics */}
-      <TD3Results />
+      {activeView === "home" ? (
+        <>
+          <HeroSection onSearch={handleSearch} />
 
-      {selectedStock && (
-        <section id="results" className="container mx-auto space-y-6 px-4 py-10">
-          <StockOverview stock={selectedStock} />
-          <div className="grid gap-6 lg:grid-cols-5">
-            <div className="lg:col-span-3">
+          {selectedStock && (
+            <section id="results" className="container mx-auto space-y-6 px-4 py-10">
+              <StockOverview stock={selectedStock} />
               <StockChart stock={selectedStock} />
-            </div>
-            <div className="lg:col-span-2">
-              <AIPrediction stock={selectedStock} />
-            </div>
-          </div>
-          <AIInsights stock={selectedStock} />
-          <RiskDisclaimer />
+              <RiskDisclaimer />
+            </section>
+          )}
+        </>
+      ) : (
+        <section id="td3-output">
+          {/* TD3 model output: CSV data run through ML model — charts, open/close, metrics */}
+          <TD3Results />
         </section>
       )}
 

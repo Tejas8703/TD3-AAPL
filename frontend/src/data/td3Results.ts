@@ -44,19 +44,29 @@ export async function fetchStockData(ticker: string): Promise<APIDataRow[]> {
 }
 
 
-export async function fetchTD3Results(): Promise<TD3Results | null> {
-  const apiUrl = API_BASE ? `${API_BASE}/api/td3-results` : "/api/td3-results";
+export async function fetchTD3Results(ticker: string = "AAPL"): Promise<TD3Results | null> {
+  const apiUrl = API_BASE ? `${API_BASE}/api/td3-results?ticker=${ticker}` : `/api/td3-results?ticker=${ticker}`;
   try {
     const res = await fetch(apiUrl);
     if (!res.ok) {
+      // Only AAPL has a static frontend fallback JSON.
+      if (ticker.toUpperCase() !== "AAPL") return null;
       const fallback = await fetch(TD3_RESULTS_URL);
       if (!fallback.ok) return null;
       const data: TD3Results = await fallback.json();
       return data;
     }
-    const data: TD3Results = await res.json();
+    const data = await res.json();
+    if (!data || data.error) {
+      // Do not silently show AAPL data for non-AAPL requests.
+      if (ticker.toUpperCase() !== "AAPL") return null;
+      const fallback = await fetch(TD3_RESULTS_URL);
+      if (!fallback.ok) return null;
+      return (await fallback.json()) as TD3Results;
+    }
     return data;
   } catch {
+    if (ticker.toUpperCase() !== "AAPL") return null;
     try {
       const res = await fetch(TD3_RESULTS_URL);
       if (!res.ok) return null;
@@ -92,3 +102,24 @@ export async function runTD3Model(episodes = 3): Promise<RunTD3Response> {
     };
   }
 }
+
+export async function uploadCSVData(file: File): Promise<RunTD3Response> {
+  const apiUrl = API_BASE ? `${API_BASE}/api/upload` : "/api/upload";
+  const formData = new FormData();
+  formData.append("file", file);
+
+  try {
+    const res = await fetch(apiUrl, {
+      method: "POST",
+      body: formData,
+    });
+    const data = await res.json();
+    if (!data.success) {
+      return { success: false, log: [], error: data.error || "Upload failed." };
+    }
+    return { success: true, log: ["Model evaluated on uploaded CSV successfully!"], results: data.results };
+  } catch (err: any) {
+    return { success: false, log: [], error: err.message || "Network error" };
+  }
+}
+

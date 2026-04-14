@@ -13,23 +13,26 @@ const AIInsights = ({ stock }: AIInsightsProps) => {
   const sentColor = ins.sentiment === "Positive" ? "text-gain" : ins.sentiment === "Negative" ? "text-loss" : "text-warn";
 
   const { data: td3 } = useQuery({
-    queryKey: ["td3-results"],
-    queryFn: fetchTD3Results,
+    queryKey: ["td3-results", stock.ticker],
+    queryFn: () => fetchTD3Results(stock.ticker),
     staleTime: 60_000,
     refetchOnWindowFocus: false,
     retry: false,
   });
 
-  const isAAPL = stock.ticker === "AAPL";
+  const supportsTD3Insights = stock.ticker === "AAPL" || stock.ticker === "TCS";
   const m = td3?.metrics;
 
   const buyReasons = [...ins.buyReasons];
   const sellReasons = [...ins.sellReasons];
 
-  if (isAAPL && m) {
+  if (supportsTD3Insights && m) {
     buyReasons.push(
-      `TD3 trading model shows ${m.returnPct.toFixed(1)}% test-period return with Sharpe ${m.sharpeRatio.toFixed(2)}.`
+      `TD3 model for ${stock.ticker} shows ${m.returnPct.toFixed(1)}% test-period return with Sharpe ${m.sharpeRatio.toFixed(2)}.`
     );
+    if (m.directionAccuracyPct != null && m.directionAccuracyPct >= 50) {
+      buyReasons.push(`Model prediction quality looks good with ${m.directionAccuracyPct.toFixed(1)}% direction accuracy.`);
+    }
     sellReasons.push(
       `TD3 model worst drawdown was ${m.maxDrawdownPct.toFixed(1)}%, which is the largest peak-to-bottom drop during the test.`
     );

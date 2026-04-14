@@ -10,7 +10,7 @@ const Footer = () => (
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
               <TrendingUp className="h-4 w-4 text-primary" />
             </div>
-            <span className="text-lg font-bold">AI <span className="text-primary">PredictX</span></span>
+            <span className="text-lg font-bold">TD3 <span className="text-primary">prediction Model</span></span>
           </div>
           <p className="text-sm text-muted-foreground leading-relaxed">
             Smart AI-powered stock market predictions and analysis platform.
