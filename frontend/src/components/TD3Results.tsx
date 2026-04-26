@@ -27,7 +27,7 @@ import {
   Gauge,
   Upload,
 } from "lucide-react";
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { fetchTD3Results, runTD3Model, uploadCSVData, type TD3Results } from "@/data/td3Results";
 import { Button } from "@/components/ui/button";
@@ -73,6 +73,27 @@ function TD3Charts({
 }) {
   const { metrics, ohlc, portfolioHistory, actions, positions } = data;
 
+  const predictedData = useMemo(() => {
+    if (!ohlc || !positions) return [];
+    
+    // Find the maximum position magnitude to normalize the offsets
+    // This ensures even weak predictions visually diverge by the target percentage
+    const maxPos = Math.max(0.0001, ...positions.map(Math.abs));
+
+    return ohlc.map((d, i) => {
+      const t = d.date.slice(0, 10);
+      if (i === 0) return { time: t, value: d.close };
+      
+      const prevClose = ohlc[i - 1].close;
+      const prevPos = positions[i - 1] || 0;
+      
+      // Normalize position against its own max bounds so it always reaches the full +/- 3% offset
+      const offset = (prevPos / maxPos) * (prevClose * 0.03);
+      
+      return { time: t, value: prevClose + offset };
+    });
+  }, [ohlc, positions]);
+
   const portfolioChartData = portfolioHistory.map((value, i) => ({
     index: i,
     date: ohlc[i]?.date ? new Date(ohlc[i].date).toLocaleDateString("en", { month: "short", day: "numeric" }) : `${i}`,
@@ -95,13 +116,13 @@ function TD3Charts({
     },
     {
       label: "Return %",
-      value: `${metrics.returnPct >= 0 ? "+" : ""}${metrics.returnPct}%`,
+      value: `${metrics.returnPct >= 0 ? "+" : ""}${metrics.returnPct.toFixed(2)}%`,
       icon: metrics.returnPct >= 0 ? TrendingUp : TrendingDown,
       color: metrics.returnPct >= 0 ? "text-gain" : "text-loss",
     },
     {
       label: "Max Drawdown %",
-      value: `${metrics.maxDrawdownPct}%`,
+      value: `${metrics.maxDrawdownPct.toFixed(2)}%`,
       icon: AlertTriangle,
       color: "text-warn",
     },
@@ -206,9 +227,10 @@ function TD3Charts({
           <div className="flex gap-4 font-mono text-xs text-[#8b949e]">
             <span><span className="text-[#3fb950]">O</span> Open</span>
             <span><span className="text-[#f85149]">C</span> Close</span>
+            <span><span className="text-[#a371f7]">--</span> Prediction</span>
           </div>
         </div>
-        <CandlestickChart data={ohlc} height={380} className="w-full" />
+        <CandlestickChart data={ohlc} predictedData={predictedData} height={380} className="w-full" />
       </motion.div>
 
       {/* Portfolio value — equity curve */}

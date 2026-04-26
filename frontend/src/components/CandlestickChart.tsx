@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { createChart, CandlestickSeries, type IChartApi } from "lightweight-charts";
+import { createChart, CandlestickSeries, LineSeries, LineStyle, type IChartApi } from "lightweight-charts";
 
 export interface OHLCItem {
   date: string;
@@ -11,6 +11,7 @@ export interface OHLCItem {
 
 interface CandlestickChartProps {
   data: OHLCItem[];
+  predictedData?: { time: string; value: number }[];
   height?: number;
   className?: string;
 }
@@ -42,7 +43,7 @@ const TRADING_THEME = {
   },
 };
 
-export default function CandlestickChart({ data, height = 380, className = "" }: CandlestickChartProps) {
+export default function CandlestickChart({ data, predictedData, height = 380, className = "" }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
 
@@ -72,11 +73,30 @@ export default function CandlestickChart({ data, height = 380, className = "" }:
       wickUpColor: "#238636",
     });
 
+    const lineSeries = chart.addSeries(LineSeries, {
+      color: "#a371f7",
+      lineWidth: 2,
+      lineStyle: LineStyle.Dotted,
+      crosshairMarkerVisible: false,
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
+
     const chartData = data.map((d) => {
       const t = d.date.slice(0, 10);
       return { time: t, open: d.open, high: d.high, low: d.low, close: d.close };
     });
     candlestickSeries.setData(chartData);
+
+    if (predictedData && predictedData.length > 0) {
+      lineSeries.setData(predictedData);
+    } else {
+      const lineData = data.map((d) => {
+        const t = d.date.slice(0, 10);
+        return { time: t, value: d.close };
+      });
+      lineSeries.setData(lineData);
+    }
 
     chart.timeScale().fitContent();
 

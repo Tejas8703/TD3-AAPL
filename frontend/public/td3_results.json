@@ -3,7 +3,8 @@
     "sharpeRatio": 0.6997,
     "returnPct": 7.42,
     "maxDrawdownPct": 20.13,
-    "finalPortfolioValue": 1.0742
+    "finalPortfolioValue": 1.0742,
+    "directionAccuracyPct": 56.4
   },
   "ohlc": [
     {

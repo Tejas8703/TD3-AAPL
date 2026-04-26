@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import type { DemoUser } from "@/lib/demoAuth";
 
-type ViewType = "home" | "td3";
+type ViewType = "home" | "td3" | "predict" | "fetch";
 
 interface HeaderProps {
   activeView?: ViewType;
@@ -20,12 +20,16 @@ const Header = ({ activeView = "home", onNavigateView, user, onLogout }: HeaderP
 
   const navItems: Array<{ label: string; value: ViewType }> = [
     { label: "Home", value: "home" },
-    { label: "TD3 prediction Model", value: "td3" },
+    { label: "Fetch Data", value: "fetch" },
   ];
 
   const handleViewChange = (view: ViewType) => {
     onNavigateView?.(view);
     setMobileOpen(false);
+    if (view === "fetch") {
+      navigate("/fetch");
+      return;
+    }
     if (window.location.pathname !== "/") {
       navigate("/");
     }
@@ -58,6 +62,16 @@ const Header = ({ activeView = "home", onNavigateView, user, onLogout }: HeaderP
               {item.label}
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => { setMobileOpen(false); navigate("/predict"); }}
+            className={`group relative rounded-md px-3 py-2 text-sm font-medium transition-colors hover:text-foreground flex items-center ${
+              activeView === "predict" ? "text-foreground bg-secondary/60" : "text-muted-foreground"
+            }`}
+          >
+            Predict
+            <span className="ml-2 inline-flex h-4 items-center justify-center rounded-full bg-red-500/20 text-[10px] text-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)] font-bold px-1.5 py-0.5 animate-pulse border border-red-500/50">LIVE</span>
+          </button>
         </nav>
 
         {/* Right side */}
@@ -115,6 +129,16 @@ const Header = ({ activeView = "home", onNavigateView, user, onLogout }: HeaderP
                   {item.label}
                 </button>
               ))}
+              <button
+                type="button"
+                className={`rounded-md px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-secondary hover:text-foreground flex items-center justify-between ${
+                  activeView === "predict" ? "text-foreground bg-secondary/60" : "text-muted-foreground"
+                }`}
+                onClick={() => { navigate("/predict"); setMobileOpen(false); }}
+              >
+                Predict
+                <span className="inline-flex h-4 items-center justify-center rounded-full bg-red-500/20 text-[10px] text-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)] font-bold px-1.5 py-0.5 animate-pulse border border-red-500/50">LIVE</span>
+              </button>
               <div className="mt-2 flex gap-2">
                 {user ? (
                   <>

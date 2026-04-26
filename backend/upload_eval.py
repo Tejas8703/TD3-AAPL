@@ -77,7 +77,7 @@ def eval_csv_file(filepath, lookback_rows=None):
             model.actor.load_state_dict(checkpoint)
     except Exception:
         # Fallback to a fast mini-training if model weights don't exist
-        from td3 import ReplayBuffer, calculate_reward
+        from td3 import ReplayBuffer
         replay_buffer = ReplayBuffer(max_size=1e5)
         # Very fast train loop so web API doesn't time out
         train_steps = min(500, len(scaled_data))

@@ -1,3 +1,13 @@
 fastapi
+python-multipart
 uvicorn
-
+yfinance
+numpy
+torch
+pandas
+scikit-learn
+matplotlib
+seaborn
+scipy
+tabulate
+ta
