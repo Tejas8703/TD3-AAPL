@@ -14,25 +14,24 @@ interface HeaderProps {
   onLogout: () => void;
 }
 
+const NAV_LINKS = [
+  { label: "Home",       path: "/" },
+  { label: "Fetch Data", path: "/fetch" },
+  { label: "Features",   path: "/features" },
+  { label: "Help",       path: "/help" },
+  { label: "Contact",    path: "/contact" },
+];
+// Predict (LIVE) is rendered after index 1 (Fetch Data) in the desktop nav
+
 const Header = ({ activeView = "home", onNavigateView, user, onLogout }: HeaderProps) => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const navigate = useNavigate();
 
-  const navItems: Array<{ label: string; value: ViewType }> = [
-    { label: "Home", value: "home" },
-    { label: "Fetch Data", value: "fetch" },
-  ];
-
   const handleViewChange = (view: ViewType) => {
     onNavigateView?.(view);
     setMobileOpen(false);
-    if (view === "fetch") {
-      navigate("/fetch");
-      return;
-    }
-    if (window.location.pathname !== "/") {
-      navigate("/");
-    }
+    if (view === "fetch") { navigate("/fetch"); return; }
+    if (window.location.pathname !== "/") { navigate("/"); }
   };
 
   return (
@@ -50,28 +49,36 @@ const Header = ({ activeView = "home", onNavigateView, user, onLogout }: HeaderP
 
         {/* Desktop Nav */}
         <nav className="hidden items-center gap-1 md:flex">
-          {navItems.map((item) => (
-            <button
-              type="button"
-              key={item.value}
-              onClick={() => handleViewChange(item.value)}
-              className={`rounded-md px-3 py-2 text-sm font-medium transition-colors hover:text-foreground ${
-                activeView === item.value ? "text-foreground bg-secondary/60" : "text-muted-foreground"
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => { setMobileOpen(false); navigate("/predict"); }}
-            className={`group relative rounded-md px-3 py-2 text-sm font-medium transition-colors hover:text-foreground flex items-center ${
-              activeView === "predict" ? "text-foreground bg-secondary/60" : "text-muted-foreground"
-            }`}
-          >
-            Predict
-            <span className="ml-2 inline-flex h-4 items-center justify-center rounded-full bg-red-500/20 text-[10px] text-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)] font-bold px-1.5 py-0.5 animate-pulse border border-red-500/50">LIVE</span>
-          </button>
+          {NAV_LINKS.map((item, idx) => {
+            const isActive = window.location.pathname === item.path;
+            return (
+              <>
+                <button
+                  type="button"
+                  key={item.path}
+                  onClick={() => { setMobileOpen(false); navigate(item.path); }}
+                  className={`rounded-md px-3 py-2 text-sm font-medium transition-colors hover:text-foreground ${
+                    isActive ? "text-foreground bg-secondary/60" : "text-muted-foreground"
+                  }`}
+                >
+                  {item.label}
+                </button>
+                {idx === 1 && (
+                  <button
+                    type="button"
+                    key="predict"
+                    onClick={() => { setMobileOpen(false); navigate("/predict"); }}
+                    className={`rounded-md px-3 py-2 text-sm font-medium transition-colors hover:text-foreground flex items-center ${
+                      window.location.pathname === "/predict" ? "text-foreground bg-secondary/60" : "text-muted-foreground"
+                    }`}
+                  >
+                    Predict
+                    <span className="ml-1.5 inline-flex h-4 items-center justify-center rounded-full bg-red-500/20 text-[10px] text-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)] font-bold px-1.5 py-0.5 animate-pulse border border-red-500/50">LIVE</span>
+                  </button>
+                )}
+              </>
+            );
+          })}
         </nav>
 
         {/* Right side */}
@@ -117,28 +124,36 @@ const Header = ({ activeView = "home", onNavigateView, user, onLogout }: HeaderP
             className="overflow-hidden border-t border-border/40 bg-background md:hidden"
           >
             <nav className="flex flex-col gap-1 p-4">
-              {navItems.map((item) => (
-                <button
-                  type="button"
-                  key={item.value}
-                  className={`rounded-md px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-secondary hover:text-foreground ${
-                    activeView === item.value ? "text-foreground bg-secondary/60" : "text-muted-foreground"
-                  }`}
-                  onClick={() => handleViewChange(item.value)}
-                >
-                  {item.label}
-                </button>
-              ))}
-              <button
-                type="button"
-                className={`rounded-md px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-secondary hover:text-foreground flex items-center justify-between ${
-                  activeView === "predict" ? "text-foreground bg-secondary/60" : "text-muted-foreground"
-                }`}
-                onClick={() => { navigate("/predict"); setMobileOpen(false); }}
-              >
-                Predict
-                <span className="inline-flex h-4 items-center justify-center rounded-full bg-red-500/20 text-[10px] text-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)] font-bold px-1.5 py-0.5 animate-pulse border border-red-500/50">LIVE</span>
-              </button>
+              {NAV_LINKS.map((item, idx) => {
+                const isActive = window.location.pathname === item.path;
+                return (
+                  <>
+                    <button
+                      type="button"
+                      key={item.path}
+                      className={`rounded-md px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-secondary hover:text-foreground ${
+                        isActive ? "text-foreground bg-secondary/60" : "text-muted-foreground"
+                      }`}
+                      onClick={() => { navigate(item.path); setMobileOpen(false); }}
+                    >
+                      {item.label}
+                    </button>
+                    {idx === 1 && (
+                      <button
+                        type="button"
+                        key="predict-mobile"
+                        className={`rounded-md px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-secondary hover:text-foreground flex items-center justify-between ${
+                          window.location.pathname === "/predict" ? "text-foreground bg-secondary/60" : "text-muted-foreground"
+                        }`}
+                        onClick={() => { navigate("/predict"); setMobileOpen(false); }}
+                      >
+                        Predict
+                        <span className="inline-flex h-4 items-center justify-center rounded-full bg-red-500/20 text-[10px] text-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)] font-bold px-1.5 py-0.5 animate-pulse border border-red-500/50">LIVE</span>
+                      </button>
+                    )}
+                  </>
+                );
+              })}
               <div className="mt-2 flex gap-2">
                 {user ? (
                   <>

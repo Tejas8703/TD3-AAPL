@@ -10,6 +10,9 @@ import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 import Predict from "./pages/Predict";
 import FetchData from "./pages/FetchData";
+import Features from "./pages/Features";
+import Help from "./pages/Help";
+import Contact from "./pages/Contact";
 
 const queryClient = new QueryClient();
 
@@ -24,9 +27,11 @@ const App = () => (
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/profile" element={<Profile />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="/predict" element={<Predict />} />
           <Route path="/fetch" element={<FetchData />} />
+          <Route path="/features" element={<Features />} />
+          <Route path="/help" element={<Help />} />
+          <Route path="/contact" element={<Contact />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
