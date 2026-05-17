@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search, Brain, TrendingUp, AlertTriangle,
-  CheckCircle2, Loader2, X, RefreshCw,
+  CheckCircle2, Loader2, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,6 @@ import { toast } from "sonner";
 import Header from "@/components/Header";
 import { getCurrentUser, logoutDemoUser, type DemoUser } from "@/lib/demoAuth";
 import { searchStocks, type StockEntry } from "@/data/stockSearch";
-import PredictionResults, { type TD3Results } from "@/components/PredictionResults";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
@@ -65,15 +64,11 @@ export default function FetchData() {
 
   const searchRef = useRef<HTMLDivElement>(null);
   const inputRef  = useRef<HTMLInputElement>(null);
-  const resultsRef = useRef<HTMLDivElement>(null);
-
   // Fetch + model state
   const [step,        setStep]        = useState<Step>("idle");
   const [stepMsg,     setStepMsg]     = useState("");
   const [rowsFetched, setRowsFetched] = useState<number | null>(null);
   const [error,       setError]       = useState<string | null>(null);
-  const [results,     setResults]     = useState<TD3Results | null>(null);
-  const [resultTicker, setResultTicker] = useState("");
 
   useEffect(() => { setUser(getCurrentUser()); }, []);
 
@@ -87,37 +82,22 @@ export default function FetchData() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // Scroll to results when they appear
-  useEffect(() => {
-    if (step === "done" && resultsRef.current) {
-      setTimeout(() => {
-        resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }, 150);
-    }
-  }, [step]);
-
   const handleLogout = () => { logoutDemoUser(); setUser(null); navigate("/login"); };
 
-  const resetResult = () => {
-    setResults(null);
-    setResultTicker("");
-    setStep("idle");
-    setError(null);
-    setRowsFetched(null);
-  };
+  const reset = () => { setStep("idle"); setError(null); setRowsFetched(null); };
 
   const selectFeatured = (ticker: string) => {
     setSelectedTicker(ticker);
     setSearchInput(""); setSearchActive(false);
     setSuggestions([]); setShowDrop(false);
-    resetResult();
+    reset();
   };
 
   const selectSuggestion = useCallback((stock: StockEntry) => {
     setSelectedTicker(stock.ticker);
     setSearchInput(stock.ticker); setSearchActive(true);
     setSuggestions([]); setShowDrop(false); setHighlightIdx(-1);
-    resetResult();
+    reset();
   }, []);
 
   const handleSearchInput = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -143,12 +123,12 @@ export default function FetchData() {
     } else {
       const t = searchInput.trim();
       if (!t) return;
-      setSelectedTicker(t); setSearchActive(true); setShowDrop(false); resetResult();
+      setSelectedTicker(t); setSearchActive(true); setShowDrop(false); reset();
     }
   };
 
   const handleFetchAndPredict = async () => {
-    setError(null); setResults(null);
+    setError(null);
     setStep("fetching");
     setStepMsg(`Fetching ${selectedTicker} (${selectedInterval.label}) from Yahoo Finance…`);
     setRowsFetched(null);
@@ -181,10 +161,12 @@ export default function FetchData() {
       const modelJson = await modelRes.json();
       if (!modelJson.success) throw new Error(modelJson.error || "Model returned an error.");
 
-      setResults(modelJson.results);
-      setResultTicker(selectedTicker);
       setStep("done");
-      toast.success(`Prediction ready for ${selectedTicker}!`);
+      toast.success(`Prediction ready — opening dashboard!`);
+
+      setTimeout(() => {
+        navigate("/predict", { state: { results: modelJson.results, customTicker: selectedTicker } });
+      }, 400);
 
     } catch (err: any) {
       setError(err.message);
@@ -207,7 +189,7 @@ export default function FetchData() {
             Live Stock Predictor
           </h1>
           <p className="text-muted-foreground text-lg mt-1">
-            Pick a stock, choose an interval — predictions appear right here.
+            Pick a stock, choose an interval — predictions open on the Predict page.
           </p>
         </motion.div>
 
@@ -336,37 +318,45 @@ export default function FetchData() {
           <Button
             size="lg"
             className="h-14 px-10 text-base gap-3 bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-500/20 disabled:opacity-60"
-            disabled={isRunning}
+            disabled={isRunning || step === "done"}
             onClick={handleFetchAndPredict}
           >
             {isRunning ? (
               <><Loader2 className="h-5 w-5 animate-spin" />{step === "fetching" ? "Fetching data…" : "Running model…"}</>
+            ) : step === "done" ? (
+              <><CheckCircle2 className="h-5 w-5 text-green-400" />Opening Predict…</>
             ) : (
-              <><Brain className="h-5 w-5" />{results ? "Run Again" : "Fetch & Run TD3 Prediction"}</>
+              <><Brain className="h-5 w-5" />Fetch & Run TD3 Prediction</>
             )}
           </Button>
 
-          {results && !isRunning && (
-            <Button variant="outline" size="lg" className="h-14 gap-2" onClick={resetResult}>
-              <RefreshCw className="h-4 w-4" /> Reset
-            </Button>
-          )}
-
-          {!isRunning && !results && (
+          {!isRunning && step === "idle" && (
             <p className="text-muted-foreground text-sm">
-              Fetching <span className="text-foreground font-semibold">{selectedTicker}</span>{" "}
-              {selectedInterval.description.toLowerCase()} · results appear below
+              Will fetch <span className="text-foreground font-semibold">{selectedTicker}</span>{" "}
+              {selectedInterval.description.toLowerCase()} and open the Predict page.
             </p>
           )}
         </motion.div>
 
         {/* Progress */}
-        {isRunning && (
+        {(isRunning || step === "done") && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
             className="rounded-2xl border border-border bg-card p-6 space-y-4">
-            <StepRow done={step === "running"} active={step === "fetching"}
-              label={step === "fetching" ? stepMsg : `Fetched ${rowsFetched ?? "…"} rows for ${selectedTicker}`} />
-            <StepRow done={false} active={step === "running"} label={stepMsg} />
+            <StepRow
+              done={step === "running" || step === "done"}
+              active={step === "fetching"}
+              label={step === "fetching" ? stepMsg : `Fetched ${rowsFetched ?? "…"} rows for ${selectedTicker}`}
+            />
+            <StepRow
+              done={step === "done"}
+              active={step === "running"}
+              label={step === "running" ? stepMsg : "TD3 model inference complete"}
+            />
+            <StepRow
+              done={false}
+              active={step === "done"}
+              label="Opening Predict dashboard…"
+            />
           </motion.div>
         )}
 
@@ -384,21 +374,6 @@ export default function FetchData() {
           </motion.div>
         )}
 
-        {/* ---- Inline prediction results ---- */}
-        <AnimatePresence>
-          {results && step === "done" && (
-            <motion.div
-              ref={resultsRef}
-              initial={{ opacity: 0, y: 24 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 12 }}
-              transition={{ duration: 0.4 }}
-              className="pt-6 border-t border-border"
-            >
-              <PredictionResults results={results} ticker={resultTicker} showFullLink={true} />
-            </motion.div>
-          )}
-        </AnimatePresence>
 
       </div>
     </div>
