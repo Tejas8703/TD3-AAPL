@@ -14,7 +14,7 @@ import Header from "@/components/Header";
 import { getCurrentUser, logoutDemoUser, type DemoUser } from "@/lib/demoAuth";
 import { searchStocks, type StockEntry } from "@/data/stockSearch";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+const API_BASE = import.meta.env.VITE_API_URL || "";
 
 const FEATURED = [
   { ticker: "AAPL",  name: "Apple Inc.",      sector: "Technology",     color: "#6366f1" },
