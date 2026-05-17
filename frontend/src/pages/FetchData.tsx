@@ -1,300 +1,419 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
-import { Download, Brain, AlertTriangle, Calendar, Search, Activity } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Search, Brain, TrendingUp, AlertTriangle,
+  CheckCircle2, Loader2, X, RefreshCw,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import Header from "@/components/Header";
 import { getCurrentUser, logoutDemoUser, type DemoUser } from "@/lib/demoAuth";
+import { searchStocks, type StockEntry } from "@/data/stockSearch";
+import PredictionResults, { type TD3Results } from "@/components/PredictionResults";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8001";
+const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
-interface FetchedRow {
-  date: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
+const FEATURED = [
+  { ticker: "AAPL",  name: "Apple Inc.",      sector: "Technology",     color: "#6366f1" },
+  { ticker: "GOOGL", name: "Alphabet Inc.",    sector: "Technology",     color: "#8b5cf6" },
+  { ticker: "MSFT",  name: "Microsoft Corp.",  sector: "Technology",     color: "#0ea5e9" },
+  { ticker: "TSLA",  name: "Tesla Inc.",        sector: "EV / Energy",    color: "#ef4444" },
+  { ticker: "NVDA",  name: "NVIDIA Corp.",      sector: "Semiconductors", color: "#22c55e" },
+];
+
+const INTERVALS = [
+  { label: "1 Day",  value: "1d",  yearsBack: 1, description: "Daily OHLCV · 1 year" },
+  { label: "1 Week", value: "1wk", yearsBack: 3, description: "Weekly OHLCV · 3 years" },
+];
+
+function getDateRange(yearsBack: number) {
+  const end = new Date();
+  const start = new Date();
+  start.setFullYear(end.getFullYear() - yearsBack);
+  return {
+    start: start.toISOString().split("T")[0],
+    end:   end.toISOString().split("T")[0],
+  };
 }
+
+function toCSV(rows: any[]): string {
+  const header = "Date,Open,High,Low,Close,Volume\n";
+  const body   = rows
+    .map(r => `${r.date.split(" ")[0]},${r.open},${r.high},${r.low},${r.close},${r.volume}`)
+    .join("\n");
+  return header + body;
+}
+
+type Step = "idle" | "fetching" | "running" | "done" | "error";
 
 export default function FetchData() {
   const navigate = useNavigate();
   const [user, setUser] = useState<DemoUser | null>(null);
 
-  const [ticker, setTicker] = useState("AAPL");
-  const [interval, setInterval] = useState("1d");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [fetchedData, setFetchedData] = useState<FetchedRow[] | null>(null);
-  const [processingModel, setProcessingModel] = useState(false);
+  // Stock selection
+  const [selectedTicker,   setSelectedTicker]   = useState("AAPL");
+  const [selectedInterval, setSelectedInterval] = useState(INTERVALS[0]);
+  const [searchInput,      setSearchInput]      = useState("");
+  const [searchActive,     setSearchActive]     = useState(false);
+  const [suggestions,      setSuggestions]      = useState<StockEntry[]>([]);
+  const [showDrop,         setShowDrop]         = useState(false);
+  const [highlightIdx,     setHighlightIdx]     = useState(-1);
 
+  const searchRef = useRef<HTMLDivElement>(null);
+  const inputRef  = useRef<HTMLInputElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
+
+  // Fetch + model state
+  const [step,        setStep]        = useState<Step>("idle");
+  const [stepMsg,     setStepMsg]     = useState("");
+  const [rowsFetched, setRowsFetched] = useState<number | null>(null);
+  const [error,       setError]       = useState<string | null>(null);
+  const [results,     setResults]     = useState<TD3Results | null>(null);
+  const [resultTicker, setResultTicker] = useState("");
+
+  useEffect(() => { setUser(getCurrentUser()); }, []);
+
+  // Close dropdown on outside click
   useEffect(() => {
-    setUser(getCurrentUser());
+    const handler = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node))
+        setShowDrop(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const handleLogout = () => {
-    logoutDemoUser();
-    setUser(null);
-    navigate("/login");
+  // Scroll to results when they appear
+  useEffect(() => {
+    if (step === "done" && resultsRef.current) {
+      setTimeout(() => {
+        resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 150);
+    }
+  }, [step]);
+
+  const handleLogout = () => { logoutDemoUser(); setUser(null); navigate("/login"); };
+
+  const resetResult = () => {
+    setResults(null);
+    setResultTicker("");
+    setStep("idle");
+    setError(null);
+    setRowsFetched(null);
   };
 
-  const handleFetch = async (e: React.FormEvent) => {
+  const selectFeatured = (ticker: string) => {
+    setSelectedTicker(ticker);
+    setSearchInput(""); setSearchActive(false);
+    setSuggestions([]); setShowDrop(false);
+    resetResult();
+  };
+
+  const selectSuggestion = useCallback((stock: StockEntry) => {
+    setSelectedTicker(stock.ticker);
+    setSearchInput(stock.ticker); setSearchActive(true);
+    setSuggestions([]); setShowDrop(false); setHighlightIdx(-1);
+    resetResult();
+  }, []);
+
+  const handleSearchInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value.toUpperCase();
+    setSearchInput(val); setHighlightIdx(-1);
+    if (!val.trim()) { setSuggestions([]); setShowDrop(false); return; }
+    const res = searchStocks(val, 7);
+    setSuggestions(res); setShowDrop(res.length > 0);
+  };
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent) => {
+    if (!showDrop || !suggestions.length) return;
+    if (e.key === "ArrowDown")  { e.preventDefault(); setHighlightIdx(i => Math.min(i+1, suggestions.length-1)); }
+    else if (e.key === "ArrowUp")   { e.preventDefault(); setHighlightIdx(i => Math.max(i-1, 0)); }
+    else if (e.key === "Enter") { e.preventDefault(); const p = highlightIdx >= 0 ? suggestions[highlightIdx] : suggestions[0]; if (p) selectSuggestion(p); }
+    else if (e.key === "Escape") setShowDrop(false);
+  };
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setError(null);
-    setFetchedData(null);
-
-    try {
-      const queryParams = new URLSearchParams({
-        ticker: ticker.toUpperCase(),
-        interval,
-      });
-      if (startDate) queryParams.append("start", startDate);
-      if (endDate) queryParams.append("end", endDate);
-
-      const res = await fetch(`${API_BASE}/api/historical-data?${queryParams.toString()}`);
-      
-      if (!res.ok) {
-        throw new Error("Failed to fetch data from backend.");
-      }
-      
-      const data = await res.json();
-      if (!data.success) {
-        throw new Error(data.error || "Unknown error fetching data.");
-      }
-
-      if (!data.data || data.data.length === 0) {
-        throw new Error("No data returned for the given parameters.");
-      }
-
-      setFetchedData(data.data);
-      toast.success(`Successfully fetched ${data.data.length} records!`);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
+    if (suggestions.length > 0) {
+      selectSuggestion(highlightIdx >= 0 ? suggestions[highlightIdx] : suggestions[0]);
+    } else {
+      const t = searchInput.trim();
+      if (!t) return;
+      setSelectedTicker(t); setSearchActive(true); setShowDrop(false); resetResult();
     }
   };
 
-  const generateCSV = () => {
-    if (!fetchedData) return "";
-    const header = "Date,Open,High,Low,Close,Volume\n";
-    const rows = fetchedData.map(r => `${r.date},${r.open},${r.high},${r.low},${r.close},${r.volume}`).join("\n");
-    return header + rows;
-  };
-
-  const handleDownloadCsv = () => {
-    const csvContent = generateCSV();
-    if (!csvContent) return;
-
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `${ticker}_${interval}_historical.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    toast.success("CSV Downloaded!");
-  };
-
-  const handleRunModel = async () => {
-    if (!fetchedData) return;
-    setProcessingModel(true);
-    setError(null);
+  const handleFetchAndPredict = async () => {
+    setError(null); setResults(null);
+    setStep("fetching");
+    setStepMsg(`Fetching ${selectedTicker} (${selectedInterval.label}) from Yahoo Finance…`);
+    setRowsFetched(null);
 
     try {
-      const csvContent = generateCSV();
-      const blob = new Blob([csvContent], { type: "text/csv" });
-      const file = new File([blob], `${ticker}_${interval}_data.csv`, { type: "text/csv" });
+      const { start, end } = getDateRange(selectedInterval.yearsBack);
+      const params = new URLSearchParams({ ticker: selectedTicker, interval: selectedInterval.value, start, end });
 
-      const formData = new FormData();
-      formData.append("file", file);
+      const res = await fetch(`${API_BASE}/api/historical-data?${params}`);
+      if (!res.ok) throw new Error("Backend unreachable. Ensure the server is running.");
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || "Failed to fetch market data.");
+      if (!json.data || json.data.length < 55)
+        throw new Error(`Only ${json.data?.length ?? 0} rows returned — need at least 55 for technical indicators.`);
 
-      toast.info("Running TD3 model on fetched data... This may take a moment.");
+      setRowsFetched(json.data.length);
+      toast.success(`Fetched ${json.data.length} rows for ${selectedTicker}`);
 
-      const res = await fetch(`${API_BASE}/api/upload`, {
-        method: "POST",
-        body: formData,
-      });
+      setStep("running");
+      setStepMsg("Running TD3 model inference…");
 
-      if (!res.ok) throw new Error("Failed to process data through the model.");
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || "Unknown error processing data.");
+      const csv  = toCSV(json.data);
+      const blob = new Blob([csv], { type: "text/csv" });
+      const file = new File([blob], `${selectedTicker}_${selectedInterval.value}.csv`, { type: "text/csv" });
+      const form = new FormData();
+      form.append("file", file);
 
-      toast.success("Model executed successfully!");
-      
-      // Navigate to predict page and pass the results in state
-      navigate("/predict", { state: { results: data.results, customTicker: ticker.toUpperCase() } });
-      
+      const modelRes = await fetch(`${API_BASE}/api/upload`, { method: "POST", body: form });
+      if (!modelRes.ok) throw new Error("Model inference failed.");
+      const modelJson = await modelRes.json();
+      if (!modelJson.success) throw new Error(modelJson.error || "Model returned an error.");
+
+      setResults(modelJson.results);
+      setResultTicker(selectedTicker);
+      setStep("done");
+      toast.success(`Prediction ready for ${selectedTicker}!`);
+
     } catch (err: any) {
       setError(err.message);
-      setProcessingModel(false);
+      setStep("error");
     }
   };
+
+  const isRunning = step === "fetching" || step === "running";
 
   return (
     <div className="min-h-screen bg-background">
       <Header activeView="fetch" user={user} onLogout={handleLogout} />
-      
-      <div className="container mx-auto px-4 py-12 max-w-5xl">
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold tracking-tight mb-2 flex items-center gap-3">
-            <Activity className="h-8 w-8 text-primary" /> Data Fetcher
-          </h1>
-          <p className="text-muted-foreground text-lg">
-            Download OHLCV historical data directly from Yahoo Finance and run it through the TD3 prediction model.
-          </p>
-        </div>
 
-        {error && (
-          <Alert variant="destructive" className="mb-6">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>Error</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
+      <div className="container mx-auto px-4 py-12 max-w-5xl space-y-10">
+
+        {/* Title */}
+        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
+          <h1 className="text-4xl font-bold tracking-tight flex items-center gap-3">
+            <TrendingUp className="h-8 w-8 text-primary" />
+            Live Stock Predictor
+          </h1>
+          <p className="text-muted-foreground text-lg mt-1">
+            Pick a stock, choose an interval — predictions appear right here.
+          </p>
+        </motion.div>
+
+        {/* Featured stocks */}
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
+          <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3 font-semibold">Popular Stocks</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+            {FEATURED.map(s => {
+              const isActive = selectedTicker === s.ticker && !searchActive;
+              return (
+                <button
+                  key={s.ticker}
+                  onClick={() => selectFeatured(s.ticker)}
+                  disabled={isRunning}
+                  className={`relative rounded-2xl border p-4 text-left transition-all hover:scale-[1.03] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none ${
+                    isActive
+                      ? "border-primary bg-primary/10 shadow-md shadow-primary/20"
+                      : "border-border bg-card hover:border-primary/40"
+                  }`}
+                >
+                  {isActive && <CheckCircle2 className="absolute top-2 right-2 h-4 w-4 text-primary" />}
+                  <div className="text-xl font-black mb-1" style={{ color: s.color }}>{s.ticker}</div>
+                  <div className="text-xs text-muted-foreground leading-tight">{s.name}</div>
+                  <Badge variant="outline" className="mt-2 text-[10px] px-1.5 py-0">{s.sector}</Badge>
+                </button>
+              );
+            })}
+          </div>
+        </motion.div>
+
+        {/* Fuzzy search */}
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+          <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3 font-semibold">Search Any Stock</p>
+
+          <div ref={searchRef} className="relative max-w-sm">
+            <form onSubmit={handleSearchSubmit} className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  ref={inputRef}
+                  placeholder="Type ticker or company name…"
+                  value={searchInput}
+                  onChange={handleSearchInput}
+                  onKeyDown={handleSearchKeyDown}
+                  onFocus={() => suggestions.length > 0 && setShowDrop(true)}
+                  disabled={isRunning}
+                  className="pl-9 pr-8 font-mono"
+                  autoComplete="off"
+                />
+                {searchInput && (
+                  <button type="button"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    onClick={() => { setSearchInput(""); setSuggestions([]); setShowDrop(false); inputRef.current?.focus(); }}>
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+              <Button type="submit" variant="outline" size="icon" disabled={isRunning || !searchInput.trim()}>
+                <Search className="h-4 w-4" />
+              </Button>
+            </form>
+
+            <AnimatePresence>
+              {showDrop && suggestions.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.12 }}
+                  className="absolute z-50 mt-1 w-full rounded-xl border border-border bg-card shadow-xl overflow-hidden"
+                >
+                  {suggestions.map((s, i) => (
+                    <button
+                      key={s.ticker} type="button"
+                      onMouseDown={() => selectSuggestion(s)}
+                      onMouseEnter={() => setHighlightIdx(i)}
+                      className={`w-full flex items-center gap-3 px-4 py-3 text-left text-sm transition-colors ${
+                        i === highlightIdx ? "bg-primary/10" : "hover:bg-muted/50"
+                      } ${i !== 0 ? "border-t border-border/50" : ""}`}
+                    >
+                      <span className="font-mono font-bold text-primary w-28 shrink-0">{s.ticker}</span>
+                      <span className="flex-1 truncate text-muted-foreground">{s.name}</span>
+                      <Badge variant="outline" className="text-[10px] px-1.5 shrink-0">{s.exchange}</Badge>
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {searchActive && !showDrop && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+              className="mt-3 inline-flex items-center gap-2 rounded-xl border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-semibold">
+              <CheckCircle2 className="h-4 w-4 text-primary" />
+              {selectedTicker} selected
+              <button className="ml-2 text-muted-foreground hover:text-foreground"
+                onClick={() => { setSearchActive(false); setSelectedTicker("AAPL"); setSearchInput(""); setSuggestions([]); resetResult(); }}>
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </motion.div>
+          )}
+        </motion.div>
+
+        {/* Interval */}
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+          <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3 font-semibold">Interval</p>
+          <div className="flex gap-3">
+            {INTERVALS.map(iv => (
+              <button
+                key={iv.value}
+                onClick={() => { setSelectedInterval(iv); resetResult(); }}
+                disabled={isRunning}
+                className={`rounded-xl border px-5 py-3 text-sm font-bold transition-all disabled:opacity-50 disabled:pointer-events-none ${
+                  selectedInterval.value === iv.value
+                    ? "border-primary bg-primary/10 text-primary shadow-sm"
+                    : "border-border bg-card hover:border-primary/40 text-muted-foreground"
+                }`}
+              >
+                {iv.label}
+                <div className="text-[10px] font-normal text-muted-foreground mt-0.5">{iv.description}</div>
+              </button>
+            ))}
+          </div>
+        </motion.div>
+
+        {/* CTA */}
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="flex items-center gap-3 flex-wrap">
+          <Button
+            size="lg"
+            className="h-14 px-10 text-base gap-3 bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-500/20 disabled:opacity-60"
+            disabled={isRunning}
+            onClick={handleFetchAndPredict}
+          >
+            {isRunning ? (
+              <><Loader2 className="h-5 w-5 animate-spin" />{step === "fetching" ? "Fetching data…" : "Running model…"}</>
+            ) : (
+              <><Brain className="h-5 w-5" />{results ? "Run Again" : "Fetch & Run TD3 Prediction"}</>
+            )}
+          </Button>
+
+          {results && !isRunning && (
+            <Button variant="outline" size="lg" className="h-14 gap-2" onClick={resetResult}>
+              <RefreshCw className="h-4 w-4" /> Reset
+            </Button>
+          )}
+
+          {!isRunning && !results && (
+            <p className="text-muted-foreground text-sm">
+              Fetching <span className="text-foreground font-semibold">{selectedTicker}</span>{" "}
+              {selectedInterval.description.toLowerCase()} · results appear below
+            </p>
+          )}
+        </motion.div>
+
+        {/* Progress */}
+        {isRunning && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
+            className="rounded-2xl border border-border bg-card p-6 space-y-4">
+            <StepRow done={step === "running"} active={step === "fetching"}
+              label={step === "fetching" ? stepMsg : `Fetched ${rowsFetched ?? "…"} rows for ${selectedTicker}`} />
+            <StepRow done={false} active={step === "running"} label={stepMsg} />
+          </motion.div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {/* Form Configuration */}
-          <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5 }} className="md:col-span-1">
-            <Card>
-              <CardHeader>
-                <CardTitle>Configuration</CardTitle>
-                <CardDescription>Set the parameters for historical data.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={handleFetch} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="ticker">Stock Ticker</Label>
-                    <Input id="ticker" placeholder="AAPL" value={ticker} onChange={(e) => setTicker(e.target.value)} required />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="interval">Interval</Label>
-                    <Select value={interval} onValueChange={setInterval}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select interval" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="15m">15 Minutes</SelectItem>
-                        <SelectItem value="1h">1 Hour</SelectItem>
-                        <SelectItem value="1d">1 Day</SelectItem>
-                        <SelectItem value="1wk">1 Week</SelectItem>
-                        <SelectItem value="1mo">1 Month</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="start">Start Date (Optional)</Label>
-                    <div className="relative">
-                      <Calendar className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                      <Input id="start" type="date" className="pl-9" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="end">End Date (Optional)</Label>
-                    <div className="relative">
-                      <Calendar className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                      <Input id="end" type="date" className="pl-9" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-                    </div>
-                  </div>
-
-                  <Button type="submit" className="w-full mt-4" disabled={loading || processingModel}>
-                    {loading ? (
-                      <span className="flex items-center gap-2"><div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" /> Fetching...</span>
-                    ) : (
-                      <span className="flex items-center gap-2"><Search className="h-4 w-4" /> Fetch Data</span>
-                    )}
-                  </Button>
-                </form>
-              </CardContent>
-            </Card>
+        {/* Error */}
+        {error && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Error</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+            <Button variant="outline" className="mt-3" onClick={() => { setStep("idle"); setError(null); }}>
+              Try Again
+            </Button>
           </motion.div>
+        )}
 
-          {/* Results Display */}
-          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5, delay: 0.1 }} className="md:col-span-2">
-            <Card className="h-full flex flex-col">
-              <CardHeader>
-                <CardTitle>Data Preview</CardTitle>
-                <CardDescription>
-                  {fetchedData 
-                    ? `Successfully loaded ${fetchedData.length} records for ${ticker.toUpperCase()}` 
-                    : "Fetch data to see the preview and run models."}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex-1 flex flex-col">
-                {fetchedData ? (
-                  <div className="space-y-6 flex-1 flex flex-col">
-                    <div className="rounded-md border border-border overflow-hidden flex-1 max-h-[300px] overflow-y-auto">
-                      <table className="w-full text-sm text-left">
-                        <thead className="text-xs text-muted-foreground bg-muted/50 sticky top-0 uppercase">
-                          <tr>
-                            <th className="px-4 py-3">Date</th>
-                            <th className="px-4 py-3 text-right">Open</th>
-                            <th className="px-4 py-3 text-right">High</th>
-                            <th className="px-4 py-3 text-right">Low</th>
-                            <th className="px-4 py-3 text-right">Close</th>
-                            <th className="px-4 py-3 text-right">Volume</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {fetchedData.slice(0, 50).map((row, i) => (
-                            <tr key={i} className="border-b border-border/50 hover:bg-muted/20">
-                              <td className="px-4 py-2 font-mono">{row.date.split(' ')[0]}</td>
-                              <td className="px-4 py-2 text-right">{row.open.toFixed(2)}</td>
-                              <td className="px-4 py-2 text-right">{row.high.toFixed(2)}</td>
-                              <td className="px-4 py-2 text-right">{row.low.toFixed(2)}</td>
-                              <td className="px-4 py-2 text-right">{row.close.toFixed(2)}</td>
-                              <td className="px-4 py-2 text-right text-muted-foreground">{row.volume.toLocaleString()}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                      {fetchedData.length > 50 && (
-                        <div className="p-3 text-center text-xs text-muted-foreground border-t border-border/50 bg-muted/10">
-                          Showing first 50 of {fetchedData.length} rows
-                        </div>
-                      )}
-                    </div>
+        {/* ---- Inline prediction results ---- */}
+        <AnimatePresence>
+          {results && step === "done" && (
+            <motion.div
+              ref={resultsRef}
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 12 }}
+              transition={{ duration: 0.4 }}
+              className="pt-6 border-t border-border"
+            >
+              <PredictionResults results={results} ticker={resultTicker} showFullLink={true} />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-auto">
-                      <Button variant="outline" size="lg" className="h-14 gap-2" onClick={handleDownloadCsv}>
-                        <Download className="h-5 w-5" /> Download CSV
-                      </Button>
-                      <Button size="lg" className="h-14 gap-2 bg-indigo-600 hover:bg-indigo-700 text-white" disabled={processingModel} onClick={handleRunModel}>
-                        {processingModel ? (
-                          <span className="flex items-center gap-2"><div className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" /> Processing...</span>
-                        ) : (
-                          <span className="flex items-center gap-2"><Brain className="h-5 w-5" /> Run TD3 Model</span>
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="h-full min-h-[300px] flex items-center justify-center border-2 border-dashed border-border/50 rounded-xl bg-muted/5">
-                    <div className="text-center text-muted-foreground">
-                      <Activity className="h-12 w-12 mx-auto mb-3 opacity-20" />
-                      <p>No data loaded</p>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </motion.div>
-        </div>
       </div>
+    </div>
+  );
+}
+
+function StepRow({ done, active, label }: { done: boolean; active: boolean; label: string }) {
+  return (
+    <div className="flex items-center gap-3 text-sm">
+      {done ? <CheckCircle2 className="h-5 w-5 text-green-500 shrink-0" />
+        : active ? <Loader2 className="h-5 w-5 text-primary animate-spin shrink-0" />
+        : <div className="h-5 w-5 rounded-full border-2 border-muted shrink-0" />}
+      <span className={done ? "text-muted-foreground line-through" : active ? "text-foreground font-medium" : "text-muted-foreground"}>
+        {label}
+      </span>
     </div>
   );
 }
