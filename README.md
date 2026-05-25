@@ -80,3 +80,7 @@ npm run dev -- --host 127.0.0.1 --port 8080
 - Missing Python packages:
   - run the backend install commands again.
 
+## Contributors
+- Tejas verma
+- tejas patil
+- Harshal Sonawane
